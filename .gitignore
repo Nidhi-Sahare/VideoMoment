@@ -1,0 +1,50 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Video files and uploads
+uploads/
+*.mp4
+*.webm
+*.mov
+*.avi
+*.mkv
+
+# Generated caches and models
+video_cache/
+deployment_cache/
+.cache/
+*.pt
+*.pth
+*.onnx
+*.npz
+*.npy
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.log
+tmp/
+temp/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated video metadata
+video_metadata/

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VideoMoment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+:root{--ink:#141311;--paper:#ece8df;--mute:#8d887c;--hot:#d9441f;--line:#2c2a26}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+header{height:56px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #cfc9bb}
+.wordmark{font:28px/1 'Instrument Serif',Georgia,serif;letter-spacing:-.01em}
+.wordmark i{font-style:italic;color:var(--hot)}
+header span{font:11px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:#6d695f}
+
+.banner{position:relative;height:128px;background:var(--ink);color:var(--paper);display:grid;grid-template-columns:clamp(180px,24vw,300px) 1fr;overflow:hidden}
+.tc{display:flex;flex-direction:column;justify-content:center;padding:0 20px;border-right:1px solid var(--line);position:relative;z-index:3;background:var(--ink)}
+#tc{font:500 clamp(20px,3vw,38px)/1 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;letter-spacing:-.03em;transition:color .4s}
+.tc.hit #tc{color:var(--hot)}
+#status{margin-top:12px;height:14px;font:11px/14px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);overflow:hidden;white-space:pre}
+.tc.hit #status{color:var(--paper)}
+#status span{display:inline-block;animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+@keyframes rise{from{transform:translateY(110%);opacity:0}to{transform:none;opacity:1}}
+
+.strip{position:relative;overflow:hidden;cursor:ew-resize;touch-action:pan-y}
+.ruler{position:absolute;left:0;right:0;top:12px;height:10px;background:
+ linear-gradient(90deg,#8d887c 1px,transparent 1px) var(--ox,0) 100%/148px 10px repeat-x,
+ linear-gradient(90deg,#4f4b43 1px,transparent 1px) var(--ox,0) 100%/14.8px 5px repeat-x}
+.frames{position:absolute;left:0;top:32px;height:76px;width:100%}
+.f{position:absolute;left:0;top:0;width:136px;height:76px;will-change:transform}
+.in{position:absolute;inset:0;transition:transform .55s cubic-bezier(.2,.8,.2,1);outline:1px solid transparent;outline-offset:3px}
+.in img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.in .g{filter:grayscale(1) contrast(1.1) brightness(.7)}
+.in .c{clip-path:inset(0 100% 0 0);transition:clip-path .6s cubic-bezier(.7,0,.2,1)}
+.f.on{z-index:2}
+.f.on .in{transform:scale(1.14);outline-color:var(--hot)}
+.f.on .c{clip-path:inset(0 0 0 0)}
+.n{position:absolute;left:0;top:84px;font:10px 'IBM Plex Mono',ui-monospace,monospace;color:#6d695f;letter-spacing:.08em}
+.f.on .n{color:var(--hot)}
+.ph{position:absolute;top:0;bottom:0;left:0;width:1px;background:var(--hot);z-index:4;pointer-events:none}
+.ph::before,.ph::after{content:"";position:absolute;left:-4px;border:4px solid transparent}
+.ph::before{top:0;border-top:6px solid var(--hot);border-bottom:0}
+.ph::after{bottom:0;border-bottom:6px solid var(--hot);border-top:0}
+.strip::after{content:"";position:absolute;inset:0 0 0 auto;width:60px;background:linear-gradient(90deg,transparent,var(--ink));pointer-events:none;z-index:5}
+#pp{position:absolute;right:12px;bottom:6px;z-index:6;background:var(--ink);color:var(--paper);border:1px solid #4a463e;padding:2px 8px;font:10px 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+#pp:hover{border-color:var(--paper)}
+#pp:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+
+main{padding:24px;max-width:1100px;color:#6d695f;font-size:13px}
+@media (max-width:640px){.banner{height:116px}.tc{padding:0 12px}}
+@media (prefers-reduced-motion:reduce){.in,.in .c,#tc{transition:none}#status span{animation:none}}
+</style>
+</head>
+<body>
+<header><div class="wordmark">Video<i>Moment</i></div><span>Search inside time</span></header>
+
+<section class="banner" aria-label="Decorative animated video timeline">
+  <div class="tc" id="tcbox" aria-hidden="true"><div id="tc">00:00:00:00</div><div id="status"></div></div>
+  <div class="strip" id="strip" aria-hidden="true">
+    <div class="ruler" id="ruler"></div>
+    <div class="frames" id="frames"></div>
+    <div class="ph" id="ph"></div>
+  </div>
+  <button id="pp" type="button" aria-pressed="false">Pause</button>
+</section>
+
+<main>Dashboard content continues here: sample videos, upload, search, player and results.</main>
+
+<script>
+(()=>{
+const IDS=[10,11,14,15,16,17,18,19,20,22,24,25,27,28,29,37,39,42];
+const FW=136, STEP=148, DUR=83.7, CRUISE=560;
+const M=IDS.length, $=id=>document.getElementById(id);
+const strip=$('strip'), frames=$('frames'), ruler=$('ruler'), ph=$('ph'), tc=$('tc'), box=$('tcbox'), pp=$('pp'), status=$('status');
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let W=0, PH=0, slots=[], n=0;
+let pos=500*STEP, v=0, mode='run', hold=0, catchIdx=null, count=0;
+let paused=reduce, hover=false, px=0, dirty=true, last=0, curStatus='';
+
+const mod=(a,b)=>((a%b)+b)%b;
+const pad=(x,l=2)=>String(x).padStart(l,'0');
+
+function build(){
+  W=strip.clientWidth; PH=Math.round(W*.28);
+  ph.style.transform=`translateX(${PH}px)`;
+  const need=Math.ceil(W/STEP)+3;
+  if(need===n) {dirty=true;return}
+  frames.innerHTML=''; slots=[]; n=need;
+  for(let i=0;i<n;i++){
+    const f=document.createElement('div'); f.className='f';
+    f.innerHTML='<div class="in"><img class="g" alt="" draggable="false"><img class="c" alt="" draggable="false"></div><div class="n"></div>';
+    f.querySelectorAll('img').forEach(im=>im.onerror=()=>im.style.visibility='hidden');
+    frames.appendChild(f); slots.push({el:f,a:null,imgs:f.querySelectorAll('img'),n:f.querySelector('.n')});
+  }
+  dirty=true;
+}
+
+const tcOf=a=>mod(a,1000)*DUR+(mod(a*13,24))/24;
+function fmt(t){
+  const s=Math.floor(t), ff=Math.floor((t-s)*24);
+  return `${pad(Math.floor(s/3600)%24)}:${pad(Math.floor(s/60)%60)}:${pad(s%60)}:${pad(ff)}`;
+}
+function setStatus(s){
+  if(s===curStatus) return; curStatus=s; status.textContent='';
+  [...s].forEach((ch,i)=>{const sp=document.createElement('span');sp.textContent=ch;sp.style.animationDelay=(reduce?0:i*22)+'ms';status.appendChild(sp)});
+}
+
+function render(){
+  const base=Math.floor(pos/STEP)-1;
+  for(let s=0;s<n;s++){
+    const a=base+s, sl=slots[mod(a,n)], x=a*STEP-pos;
+    if(sl.a!==a){
+      sl.a=a; const src=`https://picsum.photos/id/${IDS[mod(a,M)]}/272/152`;
+      sl.imgs.forEach(im=>{im.style.visibility='';im.src=src});
+      sl.n.textContent=pad(mod(a,1000),3);
+      sl.el.classList.toggle('on',mode==='hold'&&a===catchIdx);
+    }
+    sl.el.style.transform=`translate3d(${x}px,0,0)`;
+  }
+  const f=(pos+PH-FW/2)/STEP, fl=Math.floor(f);
+  tc.textContent=fmt(tcOf(fl)+(tcOf(fl+1)-tcOf(fl))*(f-fl));
+  ruler.style.setProperty('--ox',`${-mod(pos,STEP)}px`);
+}
+
+function light(on){
+  slots.forEach(sl=>sl.el.classList.toggle('on',on&&sl.a===catchIdx));
+  box.classList.toggle('hit',on);
+}
+
+function tick(ts){
+  const dt=Math.min(.05,(ts-last)/1000||0); last=ts;
+  let nd=0;
+  if(hover){
+    const k=Math.max(-1,Math.min(1,(px-W/2)/(W/2)));
+    const vt=Math.abs(k)<.08?0:k*900;
+    v+=(vt-v)*Math.min(1,dt*6);
+    if(mode==='hold'){mode='run';catchIdx=null;light(false)}
+    setStatus(Math.abs(v)>8?(v<0?'Rewinding':'Scrubbing'):'Scrub the timeline');
+  }else if(paused){
+    v+=(0-v)*Math.min(1,dt*8); if(Math.abs(v)<.5)v=0;
+    if(mode==='hold'){} else setStatus('Paused');
+  }else{
+    if(mode==='run'){
+      v+=(CRUISE-v)*Math.min(1,dt*2.2);
+      setStatus('Searching');
+      if(catchIdx===null) catchIdx=Math.floor((pos+PH)/STEP)+5+Math.floor(Math.random()*4);
+      const d=catchIdx*STEP-pos+FW/2-PH;
+      if(d<0) catchIdx=null;
+      else if(d<v*.65) mode='brake';
+    }
+    if(mode==='brake'){
+      const d=catchIdx*STEP-pos+FW/2-PH;
+      v=Math.min(v,Math.max(d*1.7,10));
+      if(v*dt>=d){ pos+=d; v=0; mode='hold'; hold=1.15; light(true); setStatus('Moment found №'+pad(++count,3)); dirty=true }
+    }
+    if(mode==='hold'){ hold-=dt; if(hold<=0){mode='run';light(false);catchIdx=null} }
+  }
+  if(v!==0){ pos+=v*dt; dirty=true }
+  if(dirty){ render(); dirty=false }
+  requestAnimationFrame(tick);
+}
+
+strip.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse'){hover=true;px=e.clientX-strip.getBoundingClientRect().left}});
+strip.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){hover=true;px=e.clientX-strip.getBoundingClientRect().left}});
+strip.addEventListener('pointerleave',()=>{hover=false;catchIdx=null;mode='run';light(false);v*=.5});
+
+pp.textContent=paused?'Play':'Pause'; pp.setAttribute('aria-pressed',paused);
+pp.addEventListener('click',()=>{
+  paused=!paused; pp.textContent=paused?'Play':'Pause'; pp.setAttribute('aria-pressed',paused);
+  if(paused&&mode!=='hold'){mode='run';catchIdx=null}
+  if(!paused&&mode==='hold'){hold=.3}
+});
+
+new ResizeObserver(build).observe(strip);
+build();
+if(reduce){ // static, already-caught still
+  catchIdx=500+2; pos=catchIdx*STEP+FW/2-PH; mode='hold'; hold=1e9; build(); render(); light(true); setStatus('Paused');
+}
+requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
