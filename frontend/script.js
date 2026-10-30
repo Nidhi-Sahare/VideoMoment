@@ -2,9 +2,14 @@
 "use strict";
 
 /* =========================================================
-   VIDEOMOMENT — DASHBOARD CONTROLLER
+   VIDEOMOMENT - DASHBOARD CONTROLLER
+   PART 1 OF 4
    ========================================================= */
-const API_BASE = "http://127.0.0.1:8000";
+
+const API_BASE = (
+  window.VIDEOMOMENT_API_BASE ||
+  "http://127.0.0.1:8001"
+).replace(/\/+$/, "");
 
 const $ = (id) => document.getElementById(id);
 
@@ -53,7 +58,11 @@ const state = {
 
   isSearching: false,
   isUploading: false,
-  selectionVersion: 0
+  selectionVersion: 0,
+
+  visitorToken: null,
+  visitorSessionPromise: null,
+  sessionMode: "unknown"
 };
 
 /* =========================================================
@@ -159,10 +168,90 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/* =========================================================
+   02. VISITOR AUTHENTICATION
+   ========================================================= */
+
+async function initializeVisitorSession() {
+  if (state.sessionMode === "local") {
+    return null;
+  }
+
+  if (state.visitorToken) {
+    return state.visitorToken;
+  }
+
+  if (state.visitorSessionPromise) {
+    return state.visitorSessionPromise;
+  }
+
+  state.visitorSessionPromise = (async () => {
+    const response = await fetch(
+      `${API_BASE}/visitors/session`,
+      {
+        method: "POST",
+        cache: "no-store"
+      }
+    );
+
+    if (response.status === 404) {
+      state.sessionMode = "local";
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `Visitor session failed (${response.status}).`
+      );
+    }
+
+    const data = await response.json();
+
+    const token = getValue(
+  data,
+  ["visitor_token", "access_token", "token"]
+);
+
+    if (!token) {
+      throw new Error(
+        "Visitor session response did not include a token."
+      );
+    }
+
+    state.visitorToken = token;
+    state.sessionMode = "public";
+
+    return token;
+  })();
+
+  try {
+    return await state.visitorSessionPromise;
+  } finally {
+    state.visitorSessionPromise = null;
+  }
+}
+
 async function apiRequest(path, options = {}) {
+  if (path !== "/visitors/session") {
+    await initializeVisitorSession();
+  }
+
+  const headers = new Headers(options.headers || {});
+
+  if (state.visitorToken) {
+    headers.set(
+      "Authorization",
+      `Bearer ${state.visitorToken}`
+    );
+  }
+
   const response = await fetch(
     `${API_BASE}${path}`,
-    options
+    {
+      ...options,
+      headers,
+      cache: "no-store"
+    }
   );
 
   if (!response.ok) {
@@ -183,7 +272,7 @@ async function apiRequest(path, options = {}) {
             : JSON.stringify(detail);
       }
     } catch {
-      // Keep the HTTP error message.
+      // Preserve the HTTP error.
     }
 
     throw new Error(message);
@@ -204,7 +293,50 @@ async function apiRequest(path, options = {}) {
 }
 
 /* =========================================================
-   02. CLEAR RESULTS AND ANSWERS
+   03. PLAYBACK TICKETS
+   ========================================================= */
+
+async function getPlaybackUrl(videoId) {
+  const id = encodeURIComponent(videoId);
+
+  if (state.sessionMode !== "public") {
+    return `${API_BASE}/videos/${id}/stream`;
+  }
+
+  const data = await apiRequest(
+    `/videos/${id}/playback-ticket`,
+    {
+      method: "POST"
+    }
+  );
+
+  const streamUrl = getValue(
+    data,
+    ["stream_url", "playback_url", "url"]
+  );
+
+  if (!streamUrl) {
+    throw new Error(
+      "Backend did not return a playback URL."
+    );
+  }
+
+  const url = new URL(
+    resolveMediaUrl(streamUrl)
+  );
+
+  // The backend already embeds the ticket in stream_url.
+  if (!url.searchParams.has("ticket")) {
+    throw new Error(
+      "Playback URL is missing its security ticket."
+    );
+  }
+
+  return url.toString();
+}
+
+/* =========================================================
+   04. CLEAR RESULTS AND ANSWERS
    ========================================================= */
 
 function clearAnswer() {
@@ -249,10 +381,10 @@ function clearResults(
 }
 
 /* =========================================================
-   03. VIDEO SELECTION
+   05. VIDEO SELECTION
    ========================================================= */
 
-function selectVideo(video) {
+async function selectVideo(video) {
   const id = getValue(video, ["video_id", "id"]);
 
   if (!id) {
@@ -264,7 +396,7 @@ function selectVideo(video) {
     return;
   }
 
-  state.selectionVersion += 1;
+  const version = ++state.selectionVersion;
 
   state.currentVideoId = String(id);
 
@@ -274,17 +406,11 @@ function selectVideo(video) {
     "Untitled video"
   );
 
-  const streamPath = getValue(
-    video,
-    ["stream_url"],
-    `/videos/${encodeURIComponent(state.currentVideoId)}/stream`
-  );
-
-  state.currentVideoUrl = resolveMediaUrl(streamPath);
+  state.currentVideoUrl = null;
 
   if (UI.player) {
     UI.player.pause();
-    UI.player.src = state.currentVideoUrl;
+    UI.player.removeAttribute("src");
     UI.player.load();
   }
 
@@ -312,6 +438,39 @@ function selectVideo(video) {
 
   updateSelectedSample();
   updateExampleQueries(video);
+
+  try {
+    const playbackUrl = await getPlaybackUrl(
+      state.currentVideoId
+    );
+
+    if (version !== state.selectionVersion) {
+      return;
+    }
+
+    state.currentVideoUrl = playbackUrl;
+
+    if (UI.player) {
+      UI.player.src = playbackUrl;
+      UI.player.load();
+    }
+  } catch (error) {
+    if (version !== state.selectionVersion) {
+      return;
+    }
+
+    if (UI.playerState) {
+      UI.playerState.textContent = "UNAVAILABLE";
+    }
+
+    setMessage(
+      UI.sourceStatus,
+      `Could not load video: ${error.message}`,
+      true
+    );
+
+    console.error("Playback error:", error);
+  }
 }
 
 function updateSelectedSample() {
@@ -379,8 +538,9 @@ function initializePlayerEvents() {
   });
 }
 
+
 /* =========================================================
-   04. SAMPLE VIDEO LIBRARY
+   06. SAMPLE VIDEO LIBRARY
    ========================================================= */
 
 function normalizeSamples(payload) {
@@ -466,17 +626,24 @@ function renderSamples(samples) {
 
       imageBox.appendChild(img);
     } else {
-      const streamUrl = getValue(
-        video,
-        ["stream_url"],
-        `/videos/${encodeURIComponent(id)}/stream`
-      );
-
-      generateMomentThumbnail(
-        resolveMediaUrl(streamUrl),
-        6,
-        imageBox
-      );
+      // Stream URLs require playback tickets in public mode.
+      // Obtain a ticket before attempting thumbnail generation.
+      getPlaybackUrl(String(id))
+        .then((url) => {
+          if (imageBox.isConnected) {
+            generateMomentThumbnail(
+              url,
+              6,
+              imageBox
+            );
+          }
+        })
+        .catch((error) => {
+          console.warn(
+            "Sample thumbnail unavailable:",
+            error
+          );
+        });
     }
 
     const details = createElement(
@@ -485,7 +652,7 @@ function renderSamples(samples) {
     );
 
     const displayTitle =
-      title.toLowerCase().includes("artemis ii")
+      String(title).toLowerCase().includes("artemis ii")
         ? "NASA Artemis II"
         : title;
 
@@ -507,8 +674,9 @@ function renderSamples(samples) {
     card.append(imageBox, details);
 
     card.addEventListener("click", () => {
-      selectVideo(video);
+      void selectVideo(video);
     });
+
     UI.sampleList.appendChild(card);
   });
 
@@ -524,15 +692,9 @@ async function loadSampleVideos() {
   try {
     const payload = await apiRequest("/videos/samples");
 
-console.log("API PAYLOAD:", payload);
+    state.samples = normalizeSamples(payload);
 
-state.samples = normalizeSamples(payload);
-
-console.log("NORMALIZED SAMPLES:", state.samples);
-
-renderSamples(state.samples);
-
-console.log("SAMPLE CARDS:", UI.sampleList?.children.length);
+    renderSamples(state.samples);
 
     const count = state.samples.length;
 
@@ -568,7 +730,7 @@ console.log("SAMPLE CARDS:", UI.sampleList?.children.length);
 }
 
 /* =========================================================
-   05. UPLOAD AND INDEXING
+   07. UPLOAD AND INDEXING
    ========================================================= */
 
 function initializeUploadEvents() {
@@ -646,7 +808,7 @@ async function uploadVideo(file) {
       );
     }
 
-    selectVideo({
+    await selectVideo({
       video_id: videoId,
       title: file.name
     });
@@ -794,7 +956,7 @@ async function pollIndexStatus(videoId) {
 }
 
 /* =========================================================
-   06. YOUTUBE URL IMPORT
+   08. YOUTUBE URL IMPORT
    ========================================================= */
 
 function initializeYoutubeEvents() {
@@ -880,7 +1042,10 @@ function initializeYoutubeEvents() {
         }
       );
 
-      const videoId = imported.video_id;
+      const videoId = getValue(
+        imported,
+        ["video_id", "id"]
+      );
 
       if (!videoId) {
         throw new Error(
@@ -888,9 +1053,12 @@ function initializeYoutubeEvents() {
         );
       }
 
-      selectVideo({
+      await selectVideo({
         video_id: videoId,
-        title: imported.title || imported.filename
+        title:
+          imported.title ||
+          imported.filename ||
+          "Imported video"
       });
 
       setMessage(
@@ -929,14 +1097,15 @@ function initializeYoutubeEvents() {
     (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        importYoutubeVideo();
+        void importYoutubeVideo();
       }
     }
   );
 }
 
+
 /* =========================================================
-   07. VIDEO-SPECIFIC EXAMPLE QUERIES
+   09. VIDEO-SPECIFIC EXAMPLE QUERIES
    ========================================================= */
 
 function updateExampleQueries(video) {
@@ -1013,7 +1182,7 @@ function initializeExampleQueries() {
 }
 
 /* =========================================================
-   08. SEARCH AND VIDEO QUESTIONS
+   10. SEARCH AND VIDEO QUESTIONS
    ========================================================= */
 
 function normalizeResults(payload) {
@@ -1285,7 +1454,7 @@ async function searchMoments(query) {
 }
 
 /* =========================================================
-   09. VIDEO THUMBNAIL GENERATION
+   11. VIDEO THUMBNAIL GENERATION
    ========================================================= */
 
 async function generateMomentThumbnail(
@@ -1382,7 +1551,7 @@ async function generateMomentThumbnail(
 }
 
 /* =========================================================
-   10. MATCHING MOMENTS
+   12. MATCHING MOMENTS
    ========================================================= */
 
 function renderResults(results) {
@@ -1466,7 +1635,7 @@ function renderResults(results) {
       createElement(
         "span",
         "result-time",
-        `${formatTime(start)} – ${formatTime(end)}`
+        `${formatTime(start)} - ${formatTime(end)}`
       ),
       createElement(
         "span",
@@ -1478,7 +1647,7 @@ function renderResults(results) {
     const play = createElement(
       "span",
       "result-play",
-      "▶"
+      "\u25B6"
     );
 
     play.setAttribute("aria-hidden", "true");
@@ -1545,7 +1714,7 @@ function playMoment(index) {
 }
 
 /* =========================================================
-   11. ANIMATED VIDEO-MOMENT BANNER
+   13. ANIMATED VIDEO-MOMENT BANNER
    ========================================================= */
 
 function initializeMomentBanner() {
@@ -1918,7 +2087,7 @@ function initializeMomentBanner() {
           highlight(true);
 
           updateStatus(
-            `MOMENT FOUND №${pad(++foundCount, 3)}`
+            `MOMENT FOUND #${pad(++foundCount, 3)}`
           );
 
           dirty = true;
@@ -1982,8 +2151,8 @@ function initializeMomentBanner() {
     if (!pauseButton) return;
 
     pauseButton.innerHTML = paused
-      ? 'PLAY <span aria-hidden="true">▶</span>'
-      : 'PAUSE <span aria-hidden="true">Ⅱ</span>';
+      ? 'PLAY <span aria-hidden="true">&#9654;</span>'
+      : 'PAUSE <span aria-hidden="true">&#10074;&#10074;</span>';
 
     pauseButton.setAttribute(
       "aria-pressed",
@@ -2043,7 +2212,7 @@ function initializeMomentBanner() {
 }
 
 /* =========================================================
-   12. INITIALIZATION
+   14. DASHBOARD INITIALIZATION
    ========================================================= */
 
 async function initializeDashboard() {
@@ -2058,6 +2227,23 @@ async function initializeDashboard() {
 
   initializeMomentBanner();
 
+  try {
+    await initializeVisitorSession();
+  } catch (error) {
+    console.error(
+      "Visitor session initialization failed:",
+      error
+    );
+
+    setMessage(
+      UI.sourceStatus,
+      error.message,
+      true
+    );
+
+    return;
+  }
+
   await loadSampleVideos();
 
   console.info(
@@ -2069,3 +2255,8 @@ document.addEventListener(
   "DOMContentLoaded",
   initializeDashboard
 );
+
+
+
+
+

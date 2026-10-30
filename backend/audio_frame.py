@@ -6,7 +6,10 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from deployment_config import IS_DEMO
-from deployment_cache import resolve_deployment_cache
+from deployment_cache import (
+    resolve_deployment_cache,
+    use_deployment_cache,
+)
 from sample_video_identity import get_sample_video_id
 
 WHISPER_MODEL_NAME="base"
@@ -94,7 +97,7 @@ def get_deployment_audio_paths(video_path):
     return transcript_path,embeddings_path
 
 def transcribe_video(video_path):
-    if IS_DEMO:
+    if use_deployment_cache(video_path):
         transcript_path,_=get_deployment_audio_paths(video_path)
         print(f"[DEMO CACHE] Loading Whisper: {transcript_path.name}",flush=True)
         with transcript_path.open("r",encoding="utf-8") as file:
@@ -141,8 +144,8 @@ def get_transcript_embeddings(video_path,transcript):
         ).encode("utf-8")
     ).hexdigest()
 
-    if IS_DEMO:
-        _,embeddings_path=get_deployment_audio_paths(video_path)
+    if use_deployment_cache(video_path):
+        _, embeddings_path = get_deployment_audio_paths(video_path)
         print(
             f"[DEMO CACHE] Loading audio embeddings: {embeddings_path.name}",
             flush=True)

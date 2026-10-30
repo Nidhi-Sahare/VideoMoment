@@ -8,7 +8,10 @@ import torch
 from PIL import Image
 from transformers import AutoProcessor,SiglipModel
 from deployment_config import IS_DEMO
-from deployment_cache import resolve_deployment_cache
+from deployment_cache import (
+    resolve_deployment_cache,
+    use_deployment_cache,
+)
 from sample_video_identity import get_sample_video_id
 
 MODEL_NAME="google/siglip-base-patch16-224"
@@ -177,7 +180,7 @@ def load_siglip_cache(cache_path):
     return timestamps,embeddings
 
 def get_cached_frame_embeddings(video_path,sample_interval=0.5):
-    if IS_DEMO:
+    if use_deployment_cache(video_path):
         if sample_interval!=0.5:
             raise ValueError(
                 "Public demo supports the pre-indexed "

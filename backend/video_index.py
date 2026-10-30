@@ -6,7 +6,10 @@ from datetime import datetime,timezone
 from pathlib import Path
 import numpy as np
 from deployment_config import IS_DEMO
-from deployment_cache import resolve_deployment_cache
+from deployment_cache import (
+    resolve_deployment_cache,
+    use_deployment_cache,
+)
 from sample_video_identity import get_sample_video_id
 
 BASE_DIR=Path(__file__).resolve().parent
@@ -80,7 +83,7 @@ def load_or_compute(cache_path,compute_fn):
     return results
 
 def get_cached_yolo(video_path,sample_interval=1.0,confidence_threshold=0.4):
-    if IS_DEMO:
+    if use_deployment_cache(video_path):
         video_id=get_sample_video_id(video_path)
         cache_path=resolve_deployment_cache(video_id,"yolo")
         print(f"[DEMO CACHE] Loading YOLO: {cache_path.name}",flush=True)
@@ -102,7 +105,7 @@ def get_cached_yolo(video_path,sample_interval=1.0,confidence_threshold=0.4):
             confidence_threshold=confidence_threshold))
 
 def get_cached_ocr(video_path,sample_interval=3.0,progress_callback=None):
-    if IS_DEMO:
+    if use_deployment_cache(video_path):
         video_id=get_sample_video_id(video_path)
         cache_path=resolve_deployment_cache(video_id,"ocr")
         print(f"[DEMO CACHE] Loading OCR: {cache_path.name}",flush=True)
