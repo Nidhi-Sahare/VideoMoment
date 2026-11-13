@@ -1,117 +1,213 @@
-# VideoMoment: Natural-Language Semantic Video Retrieval Engine
 
-**Tech Stack:** Python 3.10+ | PyTorch | OpenCV | CLIP / SigLIP | FAISS | Streamlit
+# VideoMoment
 
-> **Search hours of unindexed video using plain English.** VideoMoment indexes visual scenes and spoken context into a multimodal vector space, pinpointing the exact timestamp of any action, object, or event in milliseconds.
+**Find the exact moment in a video, just by describing it.**
 
+VideoMoment is a multimodal video retrieval system that lets you search through videos using natural language.
+
+Instead of watching an entire video or manually searching through timestamps, you can describe what you're looking for and jump directly to the relevant moment.
+
+It combines computer vision, speech understanding, multimodal retrieval, and a lightweight local LLM to make video content easier to explore.
+
+---
 
 ## Demo
 
-<p align="center">
-  <img src="assets/demo.gif" alt="VideoMoment Live Demo" width="850"/>
-</p>
+![VideoMoment Demo](assets/demo.gif)
 
-*Natural-language query retrieving exact video timestamps in real time.*
-
-**Live App:** [Insert Hugging Face / Streamlit Live Link]
+*Upload a video or import one from YouTube, search using natural language, and jump directly to matching moments.*
 
 ---
 
-## Why VideoMoment?
-Scrubbing through long lecture recordings, CCTV footage, or raw video clips manually is slow and error-prone. Standard keyword search fails when events are not explicitly mentioned in transcripts. **VideoMoment** solves this by aligning frame-level visual semantics with natural-language queries, enabling instant zero-shot moment localization without custom fine-tuning.
+## Features
+
+- **Natural Language Search** — Describe a scene, action, object, or spoken moment to find it.
+- **Multimodal Retrieval** — Search using visual content, speech, detected objects, and text visible in video frames.
+- **Timestamped Results** — Retrieve ranked video moments with start and end timestamps.
+- **Video Uploads and YouTube Imports** — Process locally uploaded MP4 files or import videos through YouTube URLs.
+- **Contextual Question Answering** — Ask questions about video content using a lightweight local LLM through Ollama.
+- **Interactive Playback** — Click a retrieved moment to jump directly to its timestamp.
 
 ---
 
-## System Architecture
+## How It Works
+
+VideoMoment processes each video through multiple models, with each model contributing a different type of information.
+
+| Component | Technology | Purpose |
+|---|---|---|
+| Visual Understanding | SigLIP | Match natural-language queries with video frames |
+| Speech Recognition | Whisper | Convert spoken audio into timestamped transcripts |
+| Semantic Embeddings | MiniLM | Represent and search spoken content |
+| Object Detection | YOLO11 | Detect objects appearing in video frames |
+| Optical Character Recognition | EasyOCR | Extract visible text from video frames |
+| Local LLM | Ollama | Generate contextual answers using retrieved video information |
+| Backend | FastAPI | Handle video processing, indexing, retrieval, and API requests |
+| Database | PostgreSQL | Store video metadata and application data |
+
+### Video Indexing
+
+When a video is uploaded or imported, VideoMoment extracts information from its visual and audio content.
+
+- SigLIP generates visual embeddings from sampled video frames.
+- Whisper transcribes spoken audio.
+- MiniLM generates semantic embeddings from transcript segments.
+- YOLO11 detects objects in video frames.
+- EasyOCR extracts text visible in frames.
+
+The extracted information is cached and reused during retrieval, avoiding repeated full-video processing for every search.
+
+### Moment Retrieval
+
+When a user enters a natural-language query, VideoMoment searches across the available modalities.
+
+The retrieval pipeline combines evidence from visual, audio, object, and OCR information, ranks relevant candidates, and returns timestamped video moments.
+
+### Contextual Question Answering
+
+VideoMoment integrates a lightweight local LLM through Ollama.
+
+The LLM uses retrieved video context to generate natural-language answers while the multimodal retrieval system remains responsible for identifying relevant video evidence.
+
+---
+
+## Architecture
 
 ```text
-[Raw Video Input]
-       │
-       ├──► Smart Keyframe & Scene-Change Extractor (OpenCV / PySceneDetect)
-       │          │
-       │          ▼
-       │    Vision-Language Encoder (CLIP / SigLIP) ──► Frame Embeddings
-       │
-       └──► Audio Track Extractor ──► Whisper ASR ────► Transcript Embeddings
-                                                               │
-                                                               ▼
-                                              [Vector Database: FAISS / ChromaDB]
-                                                               │
-[User Query: "Person walking a dog in red jacket"] ────────────┤
-                                                               ▼
-                                          Temporal Non-Max Suppression & Ranking
-                                                               │
-                                                               ▼
-                                       [Top-K Exact Timestamps + Confidence Scores]
-```
-
----
-
-## Key Features
-* **Adaptive Scene-Aware Sampling:** Skips redundant static frames using histogram and embedding deltas, cutting indexing time by **[X]%** compared to uniform FPS sampling.
-* **Multimodal Fusion (Visual + Audio):** Combines visual frame embeddings with speech-to-text timestamps so queries work whether an event is *seen* or *spoken*.
-* **Sub-Second Vector Search:** Powered by **FAISS / ChromaDB** cosine similarity search with temporal smoothing to return clean, non-overlapping video intervals.
-* **Interactive Web UI:** Built with **Streamlit / Gradio** featuring clickable timestamp chips that jump the video player directly to the matched moment.
-
----
-
-## Performance Benchmarks
-*Tested on [e.g., 1-hour 1080p MP4 video / ActivityNet subset] on [e.g., NVIDIA T4 GPU / CPU]:*
-
-| Metric | Uniform Sampling (1 FPS) | VideoMoment (Adaptive Scene Sampling) |
-| :--- | :---: | :---: |
-| **Indexing Speed** | [e.g., 142 sec] | **[e.g., 48 sec (2.9x faster)]** |
-| **Query Retrieval Latency** | [e.g., 85 ms] | **[e.g., 32 ms]** |
-| **Recall@1 (IoU > 0.5)** | [e.g., 64.2%] | **[e.g., 71.8%]** |
-
----
-
-## Quickstart (Run Locally)
-
-### 1. Clone the Repository
-```bash
-git clone https://github.com[your-username]/VideoMoment.git
-cd VideoMoment
-```
-
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Launch the App
-```bash
-streamlit run app.py
-# Or: python main.py --video path/to/video.mp4 --query "your search query"
+                 VIDEO INPUT
+                      |
+             +--------+--------+
+             |                 |
+         MP4 Upload       YouTube URL
+             |                 |
+             +--------+--------+
+                      |
+                      v
+                VIDEO INDEXING
+                      |
+       +--------------+--------------+
+       |              |              |
+       v              v              v
+     SigLIP         Whisper         YOLO11
+       |              |              |
+     Visual          MiniLM        Objects
+   Embeddings          |              |
+       |           Transcript       EasyOCR
+       |           Embeddings         |
+       |              |          Visible Text
+       |              |              |
+       +--------------+--------------+
+                      |
+                      v
+               CACHED FEATURES
+                      |
+                      v
+              MULTIMODAL SEARCH
+                      ^
+                      |
+              Natural Language Query
+                      |
+                      v
+             Retrieval + Ranking
+                      |
+             +--------+--------+
+             |                 |
+             v                 v
+       Matching Moments     Ollama LLM
+             |                 |
+             v                 v
+       Video Timestamps   Contextual Answers
 ```
 
 ---
 
 ## Project Structure
+
 ```text
-VideoMoment/
-├── app.py                 # Interactive Streamlit/Gradio frontend
-├── src/
-│   ├── sampler.py         # Adaptive keyframe & scene detection
-│   ├── encoder.py         # Multimodal CLIP/SigLIP + Whisper feature extraction
-│   ├── retriever.py       # Vector indexing & temporal interval merging
-│   └── utils.py           # Video timestamp slicing & helper functions
-├── assets/
-│   └── demo.gif           # Walkthrough demonstration GIF
-├── requirements.txt       # Pinned dependencies
-└── README.md
+VideoMomentRetrevial/
+|
+|-- backend/
+|   |-- main.py
+|   |-- multimodal_retrieval.py
+|   |-- temporal_localization.py
+|   |-- video_frames.py
+|   |-- ...
+|
+|-- frontend/
+|   |-- index.html
+|   |-- style.css
+|   |-- script.js
+|
+|-- assets/
+|   |-- demo.gif
+|
+|-- README.md
 ```
 
 ---
 
-## Future Improvements
-* [ ] Export vision encoder to **ONNX / TensorRT FP16** for edge deployment.
-* [ ] Add **Qwen2.5-VL** re-ranking on top-3 candidate clips for complex multi-step action queries.
-* [ ] Add **Dockerfile** for one-command cloud deployment.
+## Running Locally
+
+### 1. Clone the repository
+
+```bash
+git clone <your-repository-url>
+cd VideoMomentRetrevial
+```
+
+### 2. Create a Python virtual environment
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Install the project dependencies from the requirements file.
+
+### 3. Configure PostgreSQL
+
+Create a PostgreSQL database and configure the backend database connection.
+
+### 4. Configure Ollama
+
+Install [Ollama](https://ollama.com/) and pull the lightweight model configured for the project.
+
+Ensure Ollama is running to use contextual question answering.
+
+### 5. Start the backend
+
+```powershell
+cd backend
+python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+API documentation:
+
+http://127.0.0.1:8000/docs
+
+### 6. Start the frontend
+
+Open a separate terminal:
+
+```powershell
+cd frontend
+python -m http.server 5500
+```
+
+Open http://127.0.0.1:5500 in your browser.
+
+You can now upload a video, import a YouTube URL, and search for relevant moments.
 
 ---
 
-## Author
-**Nidhi Sahare**  
-BE in Artificial Intelligence & Machine Learning | B. M. S. College of Engineering (BMSCE)  
-[LinkedIn](https://linkedin.com) | [GitHub](https://github.com[your-username])
+## Current Status
+
+VideoMoment is under active development.
+
+The project includes multimodal video indexing and retrieval, a FastAPI backend, PostgreSQL integration, a web interface, and local LLM support through Ollama.
+
+Current work focuses on improving retrieval quality, processing performance, and the overall video search experience.
+
+---
+
+*Finding a moment in a video should be as simple as describing it.*
