@@ -1,13 +1,9 @@
 # VideoMoment: Natural-Language Semantic Video Retrieval Engine
 
-[![Python](https://shields.io)](https://python.org)
-[![PyTorch](https://shields.io)](https://pytorch.org)
-[![License: MIT](https://shields.io)](https://opensource.org)
-[![Live Demo](https://shields.io)](#)
+**Tech Stack:** Python 3.10+ | PyTorch | OpenCV | CLIP / SigLIP | FAISS | Streamlit
 
 > **Search hours of unindexed video using plain English.** VideoMoment indexes visual scenes and spoken context into a multimodal vector space, pinpointing the exact timestamp of any action, object, or event in milliseconds.
 
----
 
 ## Demo
 
